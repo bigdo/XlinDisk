@@ -1,7 +1,7 @@
 //! Entry: the smallest thing the core is willing to say about a storage object.
 
 use crate::model::ids::{EntryId, LocatorId, ObjectId, SourceId};
-use crate::model::observation::{Snapshot, Timestamp};
+use crate::model::observation::Timestamp;
 
 /// What the object is, in the most general sense.
 ///
@@ -46,14 +46,23 @@ bitflags::bitflags! {
 /// One storage object as seen by the core.
 ///
 /// Keep this small: at tens of millions of entries, every extra field is
-/// hundreds of megabytes.
+/// hundreds of megabytes. The metadata snapshot is therefore **not** in here —
+/// it is recorded per candidate in [`crate::model::store::EntryStore`] when the
+/// fingerprint pass starts (a `Snapshot` alone is 112 bytes).
+///
+/// `model::store::tests::entry_stays_small_enough_for_tens_of_millions` fails the
+/// build if this struct grows past its budget.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Entry {
     pub id: EntryId,
     pub source: SourceId,
     pub locator: LocatorId,
-    /// `None` when identity is unavailable; `Err(reason)` style information is
-    /// carried by [`EntryFlags::OBJECT_ID_UNKNOWN`] plus an entry-level error.
+    /// `None` when identity is unavailable; the reason is carried by
+    /// [`EntryFlags::OBJECT_ID_UNKNOWN`] plus an entry-level error.
+    ///
+    /// 48 bytes — `u128` (Windows 128-bit file ids) forces 16-byte alignment.
+    /// It is the most expensive field here and the first one to revisit if the
+    /// per-entry budget has to shrink further.
     pub object: Option<ObjectId>,
     /// Present only when the plan materializes hierarchy.
     pub parent: Option<EntryId>,
@@ -63,8 +72,6 @@ pub struct Entry {
     /// hardlinks, sparse files, compression and CoW all break that assumption.
     pub logical_size: Option<u64>,
     pub modified: Option<Timestamp>,
-    /// Metadata captured at scan time; the fingerprint pass re-stats and compares.
-    pub snapshot: Snapshot,
 }
 
 impl Entry {

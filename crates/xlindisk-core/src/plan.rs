@@ -26,14 +26,17 @@ pub enum NodeInput {
 
 impl NodeInput {
     pub fn accepts(self, produced: NodeOutput) -> bool {
-        match (self, produced) {
-            (NodeInput::Nothing, NodeOutput::Nothing) => true,
-            (NodeInput::Entries, NodeOutput::Entries) => true,
-            (NodeInput::Groups, NodeOutput::Groups) => true,
-            (NodeInput::Ranked, NodeOutput::Ranked) => true,
-            (NodeInput::EntriesOrGroups, NodeOutput::Entries | NodeOutput::Groups) => true,
-            _ => false,
-        }
+        matches!(
+            (self, produced),
+            (NodeInput::Nothing, NodeOutput::Nothing)
+                | (NodeInput::Entries, NodeOutput::Entries)
+                | (NodeInput::Groups, NodeOutput::Groups)
+                | (NodeInput::Ranked, NodeOutput::Ranked)
+                | (
+                    NodeInput::EntriesOrGroups,
+                    NodeOutput::Entries | NodeOutput::Groups
+                )
+        )
     }
 }
 

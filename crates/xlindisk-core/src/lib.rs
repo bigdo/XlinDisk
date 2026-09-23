@@ -40,6 +40,7 @@ pub use model::ids::{
     EntryId, LocatorId, ObjectId, ObjectIdUnavailable, RunId, ScanId, SessionId, SourceId, VolumeId,
 };
 pub use model::observation::{ObservationClass, Record, Snapshot, Timestamp};
+pub use model::store::{ChildIter, EntryStore, Session};
 pub use plan::{Plan, PlanNode, PLAN_VERSION};
 pub use runtime::{
     CancellationToken, ProgressEvent, ProgressStage, RunReport, RunStatus, TerminalEvent,
