@@ -3,14 +3,32 @@
 ObjectId 回答「是不是同一个底层存储对象」，与「内容是否相同」是两个问题。
 它是 hardlink 正确性与未来 cache key 的基础，不是优化项。
 
-## 冻结语义
+## Source-scoped：ObjectId 不能脱离 SourceId 解释
 
-1. **仅在单次 scan session 内有效。** ObjectId 不作为跨进程 / 跨时间的持久身份，
-   不作为缓存主键写进磁盘而不带 session 上下文。
-2. **作用域 = `(SourceId, VolumeId)`。** 两个卷上的同一个 inode 号是两个对象，
-   因此 `ObjectId` 三个字段都参与相等比较。
-3. **取不到就是取不到。** 用 `Option<ObjectId>` + `ObjectIdUnavailable` 原因，
-   不退化成「各自唯一」的假身份。
+```text
+ObjectKey = (SourceId, ObjectId)
+```
+
+为了 hot path 不必真的存一个 `ObjectKey` 结构：`Entry` 已经带 `SourceId`，
+而 `ObjectId` 自身也携带 `source` / `volume`，两者参与相等比较。
+
+## 生命周期：保守定义
+
+> **ObjectId 只保证在当前 SourceSession / ScanSession 内用于 identity comparison。**
+
+不承诺：
+
+```text
+今天 scan 得到的 ObjectId = 下个月还能拿来恢复同一个对象
+```
+
+即使 Unix inode 很诱人也不形成这个 API contract。将来 cache 需要持久身份时，另定义：
+
+```text
+PersistentObjectIdentity
+```
+
+而不是悄悄扩大 `ObjectId` 的语义。
 
 ## 缺失策略
 
@@ -22,14 +40,46 @@ ObjectId 回答「是不是同一个底层存储对象」，与「内容是否�
 | device / socket / fifo | `SpecialFile` |
 | metadata 调用失败 | `MetadataFailed`（视为 unknown，不是 unique） |
 
-**ObjectId 不可用时禁止计算可释放空间。** 唯一允许的结论是「这些文件内容相同」，
-不允许输出「删掉可以省 N 字节」。
+## ObjectId 缺失不阻止 duplicate detection
 
-## Hardlink
+必须区分两件事：
 
-* 同一 `ObjectId` 的多个路径在重复组内**只去重一次**，不当作 N 份独立存储。
-* v0.0.1 额外输出 `EntryFlags::HARDLINKED`，**不**输出 link count。
-  link count 是平台能力，等出现真实需求再进 contract。
+```text
+content duplicate      → 可以判断
+storage reclaim        → 不可以判断
+```
+
+ObjectId 不可用时，`size + BLAKE3` 仍然可以报告：
+
+> 这些逻辑对象的内容 fingerprint 相同。
+
+只是不能可靠判断「是否已经通过 hardlink 共用物理数据」。因此：
+
+* **允许**：输出 `DuplicateGroup`；
+* **不输出**：`reclaimable_bytes`。
+
+## 即使有 ObjectId，也不输出物理可释放空间
+
+```text
+logical size ≠ allocated size ≠ exclusive physical size
+```
+
+hardlink、sparse、compression、APFS clone、Btrfs reflink、CoW、dedupe filesystem
+都会破坏简单关系。v0.0.1 的 `DuplicateGroup` 最多带 `total_logical_bytes`。
+
+## Hardlink：两个层次的输出
+
+```text
+DuplicateGroup
+  ├── content: [A, B, C]           # 同一 BLAKE3
+  └── object_groups: [[A, B], [C]] # 同一 ObjectId 折叠
+```
+
+A、B 共享 ObjectId，C 不共享 ⇒ 内容成员 3 个，存储对象 2 个。
+这样 GUI 可以展示 hardlink、cleanup planner 不会误删、benchmark 不丢信息。
+
+v0.0.1 额外输出 `EntryFlags::HARDLINKED`，**不**计算「真正能释放多少块」，
+也**不**输出 link count（等出现真实需求再进 contract）。
 
 ## 代码
 

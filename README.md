@@ -42,14 +42,20 @@ human-readable evidence, and safe-by-default mutations:
 
 ## Status
 
-Repository bootstrap done; **PR0 (Contract Freeze)** and **PR1 (Architecture
-skeleton)** are in progress.
+**Architecture Draft r1** — direction accepted, in Semantic Contract Freeze.
+
+The core model is not `Entry -> hash -> result`; it is
+`Entry -> Observation -> operation -> re-observation -> validation -> result`,
+so filesystem scans, duplicate hashing, cache and future deletion all share one
+notion of "the object may have changed under us".
 
 - `docs/contracts/` — frozen semantics: object identity, observation
-  consistency, locator, run status/errors, determinism, duplicate memory model,
-  result schema, cross-platform fixtures. **PR3 must not start until these are
-  merged.**
-- `docs/adr/` — ADR-001…010.
+  consistency, locator and source contract, run status/errors, determinism,
+  duplicate resource model, result schema, cross-platform fixtures.
+  **PR3 must not start until these are merged.**
+- `docs/spec/filesystem-semantics.md` — symlink / reparse / mount boundary /
+  special files / sparse / ordering rules.
+- `docs/adr/` — ADR-001…017.
 - `docs/ARCHITECTURE.md` — layout, dependency direction, PR order.
 - `crates/` — `xlindisk-core` (frozen types), `xlindisk-source-fs` (skeleton
   until PR3), `xlindisk-cli`, `xlindisk-bench`.

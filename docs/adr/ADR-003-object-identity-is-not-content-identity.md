@@ -11,6 +11,6 @@
 ## Consequences
 
 * hardlink 的正确性依赖 ObjectId：同一 ObjectId 的多个路径在重复组内只去重一次。
-* ObjectId 只在单次 scan session 内有效，作用域为 `(SourceId, VolumeId)`。
+* ObjectId 只在单次 scan session 内有效，作用域为 `(SourceId, VolumeId)`（ADR-012）。
 * ObjectId 不可用时（网络盘 / FAT / 特殊文件 / 平台不支持）必须显式记录原因，
-  并**禁止计算可释放空间**。详见 `docs/contracts/01-object-identity.md`。
+  并**禁止推导可释放空间**（ADR-013）。详见 `docs/contracts/01-object-identity.md`。

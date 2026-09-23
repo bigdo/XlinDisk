@@ -14,7 +14,7 @@
 
 use xlindisk_core::error::{Error, ErrorCode};
 use xlindisk_core::model::ids::{LocatorId, SourceId};
-use xlindisk_core::model::observation::Snapshot;
+use xlindisk_core::model::observation::{Observation, ObservationValidation};
 use xlindisk_core::runtime::CancellationToken;
 use xlindisk_core::source::{
     ContentReader, ContentRequest, EntrySink, ScanOutcome, ScanRequest, Source, SourceCapabilities,
@@ -50,7 +50,7 @@ impl Source for FilesystemSource {
         _cancel: &CancellationToken,
     ) -> Result<ScanOutcome, Error> {
         Err(Error::with_detail(
-            ErrorCode::UnsupportedEntry,
+            ErrorCode::UnsupportedOperation,
             NOT_IMPLEMENTED,
         ))
     }
@@ -61,23 +61,45 @@ impl Source for FilesystemSource {
         _request: ContentRequest,
     ) -> Result<Box<dyn ContentReader + Send + '_>, Error> {
         Err(Error::with_detail(
-            ErrorCode::UnsupportedEntry,
+            ErrorCode::UnsupportedOperation,
             NOT_IMPLEMENTED,
         ))
     }
 
-    fn stat(&self, _locator: LocatorId) -> Result<Snapshot, Error> {
+    fn stat(&self, _locator: LocatorId) -> Result<Observation, Error> {
         Err(Error::with_detail(
-            ErrorCode::UnsupportedEntry,
+            ErrorCode::UnsupportedOperation,
             NOT_IMPLEMENTED,
         ))
     }
 
     fn display_locator(&self, _locator: LocatorId) -> Result<String, Error> {
         Err(Error::with_detail(
-            ErrorCode::UnsupportedEntry,
+            ErrorCode::UnsupportedOperation,
             NOT_IMPLEMENTED,
         ))
+    }
+
+    /// Canonical ordering key. PR3 implements the spec rule: raw filename bytes
+    /// on Unix, lossless UTF-16 code units on Windows, lexicographic either way
+    /// — no case folding, no Unicode normalization.
+    fn sort_key(&self, _locator: LocatorId) -> Result<Vec<u8>, Error> {
+        Err(Error::with_detail(
+            ErrorCode::UnsupportedOperation,
+            NOT_IMPLEMENTED,
+        ))
+    }
+
+    /// The filesystem rule: object id + size + mtime + revision must agree.
+    /// PhotoKit will compare asset id + resource version instead; the core never
+    /// hard-codes the comparison, the source owns it.
+    fn validate_observation(
+        &self,
+        _locator: LocatorId,
+        before: &Observation,
+        after: &Observation,
+    ) -> Result<ObservationValidation, Error> {
+        Ok(Observation::strict_compare(before, after))
     }
 }
 
@@ -108,6 +130,6 @@ mod tests {
         let err = source
             .scan(&request, &mut Noop, &CancellationToken::new())
             .unwrap_err();
-        assert_eq!(err.code, ErrorCode::UnsupportedEntry);
+        assert_eq!(err.code, ErrorCode::UnsupportedOperation);
     }
 }

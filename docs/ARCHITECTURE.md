@@ -3,6 +3,10 @@
 完整的方案与 review 记录在 Notion：**Architecture｜XlinDisk-core v0.0.1 实施方案**。
 本文件是仓库内的可执行摘要，只保留影响代码结构的内容。
 
+**当前状态：Architecture Draft r1** —— 架构方向通过，进入 Semantic Contract Freeze
+（PR0 r1）。核心模型从 `Entry → Hash → Result` 升级为
+`Entry → Observation → Operation → Re-observation → Validation → Result`。
+
 ## 1｜定位
 
 XlinDisk 的长期核心不是某个去重 / 清理 / 可视化 App，而是一个高性能、跨平台、
@@ -20,7 +24,7 @@ performance、portability，不让 mutation safety 干扰核心架构。
 
 | 层 | 内容 | 代码 |
 | --- | --- | --- |
-| MODEL | SourceId / EntryId / LocatorId / ObjectId、Entry、Snapshot、Fingerprint、Record、EntryStore | `src/model/` |
+| MODEL | SourceId / EntryId / LocatorId / ObjectId、Entry、Observation、Fingerprint、Record、EntryStore | `src/model/` |
 | PLAN | Scan / Filter / Group / Aggregate / Sort / Fingerprint / Limit | `src/plan.rs` |
 | RUNTIME | RunStatus、Progress、Cancellation、ErrorBudget | `src/runtime.rs`、`src/error.rs` |
 | SOURCE | Source contract（唯一知道 path / URI / PhotoKit 的地方） | `src/source.rs` |
@@ -51,23 +55,27 @@ crates/xlindisk-bench       依赖：xlindisk-core
   `crates/xlindisk-core`。**PR0 未合并不开工 PR3。**
 * **PR1（skeleton）**：workspace、四个 crate、ADR-001…010、本文档。
 * **PR2（Core Model）**：`EntryStore` —— 连续内存 + dense id，hierarchy 按需
-  materialize，snapshot 按候选记录（`Entry` 预算 ≤ 128 字节，有测试守住），
+  materialize，observation 按候选记录（`Entry` 预算 ≤ 128 字节，有测试守住），
   hardlink 分组只在候选范围内做。
+* **PR0 r1（Semantic Contract Freeze）**：`Observation` / `ObservationValidation`、
+  `Source::validate_observation` 与 `sort_key`、并发能力位、`DuplicateBudget`（有界内存、
+  无 spill）、`EntryKind::Asset` 删除、`RESULT_SCHEMA_VERSION`、ADR-011…017。
 
 Core 不含 executor / scheduler / walker：它们在 PR5 之后进入，且不得改变已冻结的类型。
 
 ### 内存原则的执行方式
 
-`Entry` 里**没有** Snapshot：一个 `Snapshot` 是 112 字节，放进去会让 `Entry` 从
-~120 涨到 240 字节（1000 万条目就是 2.4 GB）。snapshot 由 `EntryStore` 按候选
+`Entry` 里**没有** `Observation`：一个 `Observation` 约 120 字节，放进去会让 `Entry`
+从 ~120 涨到 240 字节（1000 万条目就是 2.4 GB）。observation 由 `EntryStore` 按候选
 单独记录，只有真正要 hash 的条目才付这份钱。`model::store` 里的
-`entry_stays_small_enough_for_tens_of_millions` 会在 `Entry` 超出预算时直接让测试失败。
+`entry_stays_small_enough_for_tens_of_millions` 会在 `Entry` 超出预算时直接让测试失败；
+`duplicate::tests::candidate_stays_compact` 对 `Candidate` 做同样的事。
 
 ## 5｜PR 顺序
 
 | PR | 内容 | 状态 |
 | --- | --- | --- |
-| PR0 | Contract Freeze（语义 + 类型 + fixture 清单） | ✅ 本分支 |
+| PR0 | Semantic Contract Freeze（语义 + 类型 + 版本 + fixture 清单） | ✅ r1 |
 | PR1 | Architecture skeleton（workspace、crates、ADR） | ✅ 本分支 |
 | PR2 | Core Model（`EntryStore`、snapshot 侧表、hardlink 分组） | ✅ 分支 `feat/pr2-core-model` |
 | PR3 | Reference Filesystem Source（单线程 oracle） | 阻塞于 PR0 |
@@ -81,7 +89,8 @@ Release gate 清单见 Notion 第 28 节；本仓库在 PR8 同步为可执行�
 
 ## 6｜API 与实现解耦
 
-* `crossbeam-deque`、`crossbeam-channel`、单 scheduler 是**实现细节**，不进公共 API。
+* `crossbeam-deque`、`crossbeam-channel`、单 scheduler 是**实现细节**，不进公共 API
+  （ADR-017 是这条的正式依据）。
 * **ADR-010 已从架构硬约束降级为 benchmark 假设**：Source 抽象用泛型、trait object
   还是 enum，由 benchmark 决定。当前骨架用 trait object（`Box<dyn ContentReader>`），
   出现在**内容读取**边界，而不是每 entry 的 hot path。

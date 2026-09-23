@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::model::entry::{Entry, EntryFlags, EntryKind};
 use crate::model::ids::{EntryId, LocatorId, ObjectId, ScanId, SessionId, SourceId};
-use crate::model::observation::{Snapshot, Timestamp};
+use crate::model::observation::{Observation, Timestamp};
 
 /// A scan session: the scope in which ids, locators and object identities mean
 /// something.
@@ -44,9 +44,10 @@ pub struct EntryStore {
     /// each, and the arena stays relocatable.
     first_child: Vec<Option<EntryId>>,
     next_sibling: Vec<Option<EntryId>>,
-    /// Metadata snapshots, recorded only for entries the fingerprint pass will
-    /// actually look at. A `Snapshot` is 112 bytes, so it never lives in `Entry`.
-    snapshots: HashMap<EntryId, Snapshot>,
+    /// Observations, recorded only for entries the fingerprint pass will
+    /// actually look at. An `Observation` is ~120 bytes, so it never lives in
+    /// `Entry`.
+    observations: HashMap<EntryId, Observation>,
     /// Set once the caller asks for hierarchy; before that the link vectors are
     /// empty and cost nothing.
     materialized: bool,
@@ -62,7 +63,7 @@ impl EntryStore {
             entries: Vec::with_capacity(capacity),
             first_child: Vec::new(),
             next_sibling: Vec::new(),
-            snapshots: HashMap::new(),
+            observations: HashMap::new(),
             materialized: false,
         }
     }
@@ -137,14 +138,15 @@ impl EntryStore {
         self.entries.iter().filter(|e| e.is_duplicate_candidate())
     }
 
-    /// Record the pre-hash snapshot. The fingerprint pass re-stats and compares
-    /// against this; without it there is no way to detect `ChangedDuringScan`.
-    pub fn record_snapshot(&mut self, id: EntryId, snapshot: Snapshot) {
-        self.snapshots.insert(id, snapshot);
+    /// Record the pre-operation observation. The fingerprint pass re-observes
+    /// and validates against this; without it there is no way to detect
+    /// `ChangedDuringScan`.
+    pub fn record_observation(&mut self, id: EntryId, observation: Observation) {
+        self.observations.insert(id, observation);
     }
 
-    pub fn snapshot(&self, id: EntryId) -> Option<&Snapshot> {
-        self.snapshots.get(&id)
+    pub fn observation(&self, id: EntryId) -> Option<&Observation> {
+        self.observations.get(&id)
     }
 
     /// Build the child/sibling indexes. Cheap to call once, wasteful to keep for
@@ -354,18 +356,20 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_are_recorded_per_candidate() {
+    fn observations_are_recorded_per_candidate() {
         let mut store = EntryStore::new();
         let id = store.push(entry(None, None, EntryKind::File));
-        assert!(store.snapshot(id).is_none());
-        let snapshot = Snapshot {
+        assert!(store.observation(id).is_none());
+        let observation = Observation {
+            source: SourceId(1),
+            locator: LocatorId(0),
+            object: Some(object_id(3)),
             logical_size: Some(10),
             modified: Some(Timestamp::new(1_700_000_000, 0)),
-            object: Some(object_id(3)),
-            generation: None,
+            revision: None,
         };
-        store.record_snapshot(id, snapshot);
-        assert_eq!(store.snapshot(id), Some(&snapshot));
+        store.record_observation(id, observation);
+        assert_eq!(store.observation(id), Some(&observation));
     }
 
     #[test]
