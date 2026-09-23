@@ -29,9 +29,11 @@ pub mod runtime;
 pub mod source;
 
 pub use determinism::{canonical_cmp, sort_canonical, GroupOrderKey};
-pub use duplicate::{CandidateBudget, DuplicateStage, SpillPolicy, SpillTarget};
+pub use duplicate::{
+    Candidate, DuplicateBudget, DuplicateGroup, DuplicateStage, ExcludedCandidate, ExclusionReason,
+};
 pub use error::{EntryError, Error, ErrorBudget, ErrorCode};
-pub use model::entry::{Entry, EntryFlags, EntryKind};
+pub use model::entry::{Entry, EntryFlags, EntryKind, SpecialSubtype};
 pub use model::fingerprint::{
     Fingerprint, FingerprintSpec, VerificationMode, VerificationStatus, FINGERPRINT_ALGORITHM,
     FINGERPRINT_ALGORITHM_VERSION,
@@ -39,16 +41,21 @@ pub use model::fingerprint::{
 pub use model::ids::{
     EntryId, LocatorId, ObjectId, ObjectIdUnavailable, RunId, ScanId, SessionId, SourceId, VolumeId,
 };
-pub use model::observation::{ObservationClass, Record, Snapshot, Timestamp};
+pub use model::observation::{Observation, ObservationValidation, Record, RevisionId, Timestamp};
 pub use model::store::{ChildIter, EntryStore, Session};
 pub use plan::{Plan, PlanNode, PLAN_VERSION};
 pub use runtime::{
-    CancellationToken, ProgressEvent, ProgressStage, RunReport, RunStatus, TerminalEvent,
+    CancellationToken, ProgressCounters, ProgressEvent, ProgressStage, RunReport, RunStatus,
+    TerminalEvent,
 };
 pub use source::{
-    ContentReader, ContentRequest, EntryBatch, EntrySink, ScanOutcome, ScanRequest, Source,
-    SourceCapabilities,
+    ContentReader, ContentRequest, EntryBatch, EntrySink, LinkPolicy, MountPolicy, ReparsePolicy,
+    ScanOutcome, ScanRequest, Source, SourceCapabilities,
 };
 
-/// Version of the frozen plan IR. Bumped only through a contract revision.
-pub const CORE_CONTRACT_VERSION: u32 = 1;
+/// Version of the frozen core contract. Bumped only through a contract revision.
+pub const CORE_CONTRACT_VERSION: u32 = 2;
+
+/// Version of the result schema. A consumer must not read a `Record` without
+/// checking this.
+pub const RESULT_SCHEMA_VERSION: u32 = 1;

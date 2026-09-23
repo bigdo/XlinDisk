@@ -11,6 +11,7 @@ Core 的公共对象模型**不含** `PathBuf` 或任何 filesystem 语义。
 ## Consequences
 
 * PhotoKit / MediaStore / SAF adapter 可以在不改 Core 的前提下接入。
-* 任何「临时把路径塞进某个 enum 变体」的写法都是违约，包括 spill 目录
-  （见 `duplicate::SpillTarget`，由 host 解析位置）。
+* 任何「临时把路径塞进某个 enum 变体」的写法都是违约。
+* 相关：ADR-014（Locator 是 opaque / source-owned / session-scoped），
+  ADR-015（v0.0.1 的候选存储只在内存中，因此也不需要 spill 目录）。
 * Spec、类型定义里的注释必须持续说明这条边界，否则后来者会自然地把路径加回来。

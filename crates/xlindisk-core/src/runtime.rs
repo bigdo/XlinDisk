@@ -13,9 +13,13 @@ use crate::model::ids::RunId;
 
 /// End state of a run.
 ///
-/// `Partial` means the run stopped early (cancelled, or budget/entry errors
-/// forced it to stop) **and** still returned usable results. Callers must not
-/// treat a partial run as a complete one.
+/// * `Completed` — the whole scope the plan asked for was covered.
+/// * `Partial` — usable results, but part of the scope was not covered: budget
+///   hit, too many unreadable entries, part of a source unreachable.
+/// * `Cancelled` — the caller asked to stop. It may carry partial results, but
+///   `is_final()` is false: nobody may conclude "this is the answer".
+/// * `Failed` — nothing meaningful: source init failed, invalid root, invalid
+///   plan.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RunStatus {
     Completed,
@@ -28,8 +32,15 @@ pub enum RunStatus {
 }
 
 impl RunStatus {
+    /// Whether the results may be used at all.
     pub fn is_usable(&self) -> bool {
         matches!(self, RunStatus::Completed | RunStatus::Partial { .. })
+    }
+
+    /// Whether the run reached a conclusion. A cancelled run never does, even
+    /// when it hands back partial data.
+    pub fn is_final(self) -> bool {
+        !matches!(self, RunStatus::Cancelled)
     }
 }
 
@@ -65,20 +76,27 @@ pub enum ProgressStage {
     Materialize,
 }
 
+/// Monotonic counters carried by a progress sample.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ProgressCounters {
+    pub entries_seen: u64,
+    pub bytes_read: u64,
+    pub candidates: u64,
+}
+
 /// One progress sample.
 ///
 /// The channel is bounded and lossy: a slow UI, or an MCP client that stopped
-/// reading, must never block a scanner. `sequence` therefore has gaps by design,
-/// and consumers rely on `terminal` to know the run is over.
+/// reading, must never block a scanner. `sequence` therefore has gaps by design —
+/// that is how a consumer notices dropped samples. The final event is never
+/// dropped.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ProgressEvent {
     pub run_id: RunId,
     /// Monotonic within a run; gaps are normal (lossy channel).
     pub sequence: u64,
     pub stage: ProgressStage,
-    pub entries_seen: u64,
-    pub bytes_read: u64,
-    pub candidates: u64,
+    pub counters: ProgressCounters,
     pub elapsed: Duration,
     /// `Some` only on the final event.
     pub terminal: Option<TerminalEvent>,
@@ -90,9 +108,7 @@ impl ProgressEvent {
             run_id,
             sequence,
             stage,
-            entries_seen: 0,
-            bytes_read: 0,
-            candidates: 0,
+            counters: ProgressCounters::default(),
             elapsed: Duration::ZERO,
             terminal: None,
         }
@@ -176,6 +192,14 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_never_counts_as_a_conclusion() {
+        assert!(RunStatus::Completed.is_final());
+        assert!(RunStatus::Partial { errors: 1 }.is_final());
+        assert!(RunStatus::Failed.is_final());
+        assert!(!RunStatus::Cancelled.is_final());
+    }
+
+    #[test]
     fn terminal_event_closes_the_progress_stream() {
         let event = ProgressEvent::sample(RunId(1), 0, ProgressStage::Scan)
             .finish(RunStatus::Partial { errors: 2 });
@@ -197,7 +221,7 @@ mod tests {
         let mut report = RunReport::new(RunId(7));
         report
             .errors
-            .record(EntryError::new(ErrorCode::ReadFailed, None, None));
+            .record(EntryError::new(ErrorCode::IoError, None, None));
         assert_eq!(report.errors.total(), 1);
     }
 }

@@ -4,9 +4,15 @@
 //! front-end has to interpret strings. Discriminants are the wire format:
 //! adding a code is fine, renumbering one is a contract break.
 
+use std::collections::HashMap;
+
 use crate::model::ids::{EntryId, LocatorId, SourceId};
 
 /// Stable error codes.
+///
+/// The discriminant *is* the wire format. Adding a code is fine; renumbering one
+/// is a contract break. A `message` may accompany a code but is always
+/// human-readable only — no consumer parses it.
 ///
 /// * `1xx` — fatal: the run cannot produce anything meaningful.
 /// * `2xx` — entry-level: record it, keep scanning.
@@ -20,20 +26,27 @@ pub enum ErrorCode {
     SourceInitFailed = 101,
     ExecutorUnavailable = 102,
     PlanInvalid = 103,
+    SourceUnavailable = 104,
 
     // --- entry-level -------------------------------------------------------
     PermissionDenied = 200,
-    /// Deleted, renamed or moved out of scope during the scan.
-    GoneDuringScan = 201,
-    ReadFailed = 202,
+    /// Deleted, renamed or moved out of scope; also plain "does not exist".
+    NotFound = 201,
+    /// The object still exists but permissions changed mid-run.
+    PermissionChanged = 202,
+    /// A re-observation disagreed with the previous one.
+    ChangedDuringScan = 203,
+    /// Generic IO failure while reading content or metadata.
+    IoError = 204,
     /// Locator belongs to another session/source, or was never issued.
-    LocatorInvalid = 203,
+    LocatorInvalid = 205,
     /// The source session ended; the locator cannot be re-opened.
-    LocatorExpired = 204,
-    ObjectIdUnavailable = 205,
-    UnsupportedEntry = 206,
-    /// Budget exhausted: candidates dropped, see [`ErrorBudget`].
-    BudgetExceeded = 207,
+    LocatorExpired = 206,
+    ObjectIdUnavailable = 207,
+    /// The source cannot do what was asked (e.g. `open_content` on a socket).
+    UnsupportedOperation = 208,
+    /// Budget exhausted: the run degrades to `Partial`, it does not OOM.
+    ResourceLimitExceeded = 209,
 
     // --- control flow ------------------------------------------------------
     Cancelled = 300,
@@ -55,6 +68,7 @@ impl ErrorCode {
                 | ErrorCode::SourceInitFailed
                 | ErrorCode::ExecutorUnavailable
                 | ErrorCode::PlanInvalid
+                | ErrorCode::SourceUnavailable
                 | ErrorCode::Internal
         )
     }
@@ -149,24 +163,17 @@ impl EntryError {
 /// Entry-level errors are counted, not accumulated without limit.
 ///
 /// One permission-denied directory on a network mount can produce millions of
-/// errors; keeping them all would blow the memory budget for nothing. Past the
-/// cap we only keep the counts.
+/// errors. Past the cap we keep the first N detailed errors plus aggregated
+/// counters per code — "PermissionDenied: 1,923,339" is a better answer than an
+/// OOM, and it is what an MCP client can actually consume.
 #[derive(Clone, Debug)]
 pub struct ErrorBudget {
     /// How many individual entry errors to retain.
     pub max_retained: usize,
     retained: Vec<EntryError>,
     total: u64,
-}
-
-impl Default for ErrorBudget {
-    fn default() -> Self {
-        Self {
-            max_retained: 1_000,
-            retained: Vec::new(),
-            total: 0,
-        }
-    }
+    /// Per-code totals, including errors that were not retained.
+    counts: HashMap<ErrorCode, u64>,
 }
 
 impl ErrorBudget {
@@ -175,11 +182,13 @@ impl ErrorBudget {
             max_retained,
             retained: Vec::with_capacity(max_retained.min(1_024)),
             total: 0,
+            counts: HashMap::new(),
         }
     }
 
     pub fn record(&mut self, error: EntryError) {
         self.total += 1;
+        *self.counts.entry(error.code).or_insert(0) += 1;
         if self.retained.len() < self.max_retained {
             self.retained.push(error);
         }
@@ -188,6 +197,16 @@ impl ErrorBudget {
     /// Total number of entry-level errors seen, retained or not.
     pub fn total(&self) -> u64 {
         self.total
+    }
+
+    /// Count for one code, retained or not.
+    pub fn count_of(&self, code: ErrorCode) -> u64 {
+        self.counts.get(&code).copied().unwrap_or(0)
+    }
+
+    /// All per-code counters.
+    pub fn counts(&self) -> &HashMap<ErrorCode, u64> {
+        &self.counts
     }
 
     /// Number of errors dropped by the cap.
@@ -204,6 +223,15 @@ impl ErrorBudget {
     }
 }
 
+/// Default retention: first 1024 detailed errors, then counters only.
+pub const MAX_DETAILED_ENTRY_ERRORS: usize = 1024;
+
+impl Default for ErrorBudget {
+    fn default() -> Self {
+        Self::new(MAX_DETAILED_ENTRY_ERRORS)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,15 +240,18 @@ mod tests {
     #[test]
     fn entry_level_errors_never_abort_a_run() {
         assert!(!ErrorCode::PermissionDenied.is_fatal());
-        assert!(!ErrorCode::GoneDuringScan.is_fatal());
-        assert!(!ErrorCode::ReadFailed.is_fatal());
+        assert!(!ErrorCode::NotFound.is_fatal());
+        assert!(!ErrorCode::IoError.is_fatal());
+        assert!(!ErrorCode::ResourceLimitExceeded.is_fatal());
         assert!(ErrorCode::RootNotFound.is_fatal());
+        assert!(ErrorCode::SourceUnavailable.is_fatal());
     }
 
     #[test]
     fn codes_are_stable() {
         assert_eq!(ErrorCode::RootNotFound.code(), 100);
         assert_eq!(ErrorCode::PermissionDenied.code(), 200);
+        assert_eq!(ErrorCode::ResourceLimitExceeded.code(), 209);
         assert_eq!(ErrorCode::Cancelled.code(), 300);
         assert_eq!(ErrorCode::Internal.code(), 400);
     }
@@ -238,5 +269,13 @@ mod tests {
         assert_eq!(budget.total(), 10);
         assert_eq!(budget.retained().len(), 3);
         assert_eq!(budget.dropped(), 7);
+        assert_eq!(budget.count_of(ErrorCode::PermissionDenied), 10);
+        assert_eq!(budget.count_of(ErrorCode::NotFound), 0);
+    }
+
+    #[test]
+    fn default_retention_is_1024() {
+        let budget = ErrorBudget::default();
+        assert_eq!(budget.max_retained, 1024);
     }
 }

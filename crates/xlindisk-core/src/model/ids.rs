@@ -10,6 +10,14 @@
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct SourceId(pub u32);
 
+/// `0` is the unspecified id, never one issued by a source. Exists so that
+/// value types holding ids can derive `Default`.
+impl Default for SourceId {
+    fn default() -> Self {
+        SourceId(0)
+    }
+}
+
 /// A group of scans that share locators, e.g. one library open / one mount.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct SessionId(pub u64);
@@ -42,6 +50,13 @@ pub struct LocatorId(pub u64);
 
 impl LocatorId {
     pub const INVALID: LocatorId = LocatorId(u64::MAX);
+}
+
+/// `0` is the unspecified locator, never one issued by a source.
+impl Default for LocatorId {
+    fn default() -> Self {
+        LocatorId(0)
+    }
 }
 
 /// Device / volume / library partition inside a source.

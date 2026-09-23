@@ -5,19 +5,30 @@ use crate::model::observation::Timestamp;
 
 /// What the object is, in the most general sense.
 ///
-/// `Asset` means "provider-specific resource", e.g. a PhotoKit resource or a
-/// MediaStore item. It deliberately does **not** mean image / video / audio:
-/// v0.0.1 performs no media classification.
+/// No `Asset` variant: whether a PhotoKit `PHAsset` is a new kind or just a
+/// provider object is a question to answer when PhotoKit actually arrives, not
+/// now (same rule as `ComputeBackend`: no abstraction without a second real
+/// implementation).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum EntryKind {
     File,
     Directory,
     Symlink,
-    /// Provider-specific resource (iOS / Android), *not* a media category.
-    Asset,
-    /// Device, socket, fifo, and other Unix special files.
+    /// Device, socket, fifo and friends; enumerated, never opened for content.
     Special,
     Other,
+}
+
+/// Refinement of [`EntryKind::Special`], encoded in flags so it costs nothing
+/// per entry.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SpecialSubtype {
+    Socket,
+    Fifo,
+    BlockDevice,
+    CharDevice,
+    /// Something platform-specific the core does not model further.
+    Unknown,
 }
 
 bitflags::bitflags! {
@@ -28,18 +39,28 @@ bitflags::bitflags! {
         const HARDLINKED = 1 << 0;
         /// Symlink / junction / reparse point; see the symlink policy contract.
         const LINK = 1 << 1;
-        /// The link target could not be resolved.
-        const BROKEN_LINK = 1 << 2;
+        /// The link target could not be resolved (broken symlink).
+        const TARGET_UNAVAILABLE = 1 << 2;
         /// Crossing it would leave the requested filesystem(s).
         const MOUNT_BOUNDARY = 1 << 3;
+        /// Windows reparse point / junction.
+        const REPARSE_POINT = 1 << 4;
         /// Size on disk is smaller than `logical_size`.
-        const SPARSE = 1 << 4;
+        const SPARSE = 1 << 5;
         /// Content could not be read (permission, IO, decryption, ...).
-        const UNREADABLE = 1 << 5;
+        const UNREADABLE = 1 << 6;
         /// Metadata changed between the scan pass and the fingerprint pass.
-        const CHANGED_DURING_SCAN = 1 << 6;
+        const CHANGED_DURING_SCAN = 1 << 7;
         /// Object identity could not be obtained.
-        const OBJECT_ID_UNKNOWN = 1 << 7;
+        const OBJECT_ID_UNKNOWN = 1 << 8;
+        /// `Special`: socket.
+        const SOCKET = 1 << 9;
+        /// `Special`: fifo / named pipe.
+        const FIFO = 1 << 10;
+        /// `Special`: block device.
+        const BLOCK_DEVICE = 1 << 11;
+        /// `Special`: character device.
+        const CHAR_DEVICE = 1 << 12;
     }
 }
 
@@ -77,8 +98,26 @@ pub struct Entry {
 impl Entry {
     /// True when the entry can be a duplicate candidate at all.
     pub fn is_duplicate_candidate(&self) -> bool {
-        matches!(self.kind, EntryKind::File | EntryKind::Asset)
+        matches!(self.kind, EntryKind::File)
             && !self.flags.contains(EntryFlags::UNREADABLE)
             && !self.flags.contains(EntryFlags::CHANGED_DURING_SCAN)
+    }
+
+    /// Special files are enumerated but never opened, and never hashed.
+    pub fn special_subtype(&self) -> Option<SpecialSubtype> {
+        if !matches!(self.kind, EntryKind::Special) {
+            return None;
+        }
+        Some(if self.flags.contains(EntryFlags::SOCKET) {
+            SpecialSubtype::Socket
+        } else if self.flags.contains(EntryFlags::FIFO) {
+            SpecialSubtype::Fifo
+        } else if self.flags.contains(EntryFlags::BLOCK_DEVICE) {
+            SpecialSubtype::BlockDevice
+        } else if self.flags.contains(EntryFlags::CHAR_DEVICE) {
+            SpecialSubtype::CharDevice
+        } else {
+            SpecialSubtype::Unknown
+        })
     }
 }

@@ -5,8 +5,9 @@
 ## Decision
 
 并发由 Core 自己的一个 scheduler 拥有，不混用 Rayon、Tokio 与 BLAKE3 Rayon，
-避免 oversubscription。`SourceCapabilities::SERIALIZE_READS` 是唯一让 Source
-退回串行读取的开关。
+避免 oversubscription。并发能力由 Source 自己声明：
+`SourceCapabilities::CONCURRENT_STAT` / `CONCURRENT_READ`；未声明者由 Runtime 串行化
+（见 ADR-017）。
 
 ## Consequences
 
