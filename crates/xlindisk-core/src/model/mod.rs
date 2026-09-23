@@ -5,3 +5,4 @@ pub mod entry;
 pub mod fingerprint;
 pub mod ids;
 pub mod observation;
+pub mod store;

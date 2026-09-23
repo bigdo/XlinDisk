@@ -20,7 +20,7 @@ performance、portability，不让 mutation safety 干扰核心架构。
 
 | 层 | 内容 | 代码 |
 | --- | --- | --- |
-| MODEL | SourceId / EntryId / LocatorId / ObjectId、Entry、Snapshot、Fingerprint、Record | `src/model/` |
+| MODEL | SourceId / EntryId / LocatorId / ObjectId、Entry、Snapshot、Fingerprint、Record、EntryStore | `src/model/` |
 | PLAN | Scan / Filter / Group / Aggregate / Sort / Fingerprint / Limit | `src/plan.rs` |
 | RUNTIME | RunStatus、Progress、Cancellation、ErrorBudget | `src/runtime.rs`、`src/error.rs` |
 | SOURCE | Source contract（唯一知道 path / URI / PhotoKit 的地方） | `src/source.rs` |
@@ -50,9 +50,18 @@ crates/xlindisk-bench       依赖：xlindisk-core
 * **PR0（Contract Freeze）**：语义契约已冻结在 `docs/contracts/`，类型已落地在
   `crates/xlindisk-core`。**PR0 未合并不开工 PR3。**
 * **PR1（skeleton）**：workspace、四个 crate、ADR-001…010、本文档。
-* PR2 及以后：见第 5 节。
+* **PR2（Core Model）**：`EntryStore` —— 连续内存 + dense id，hierarchy 按需
+  materialize，snapshot 按候选记录（`Entry` 预算 ≤ 128 字节，有测试守住），
+  hardlink 分组只在候选范围内做。
 
 Core 不含 executor / scheduler / walker：它们在 PR5 之后进入，且不得改变已冻结的类型。
+
+### 内存原则的执行方式
+
+`Entry` 里**没有** Snapshot：一个 `Snapshot` 是 112 字节，放进去会让 `Entry` 从
+~120 涨到 240 字节（1000 万条目就是 2.4 GB）。snapshot 由 `EntryStore` 按候选
+单独记录，只有真正要 hash 的条目才付这份钱。`model::store` 里的
+`entry_stays_small_enough_for_tens_of_millions` 会在 `Entry` 超出预算时直接让测试失败。
 
 ## 5｜PR 顺序
 
@@ -60,7 +69,7 @@ Core 不含 executor / scheduler / walker：它们在 PR5 之后进入，且不�
 | --- | --- | --- |
 | PR0 | Contract Freeze（语义 + 类型 + fixture 清单） | ✅ 本分支 |
 | PR1 | Architecture skeleton（workspace、crates、ADR） | ✅ 本分支 |
-| PR2 | Core Model（按 PR0 语义实现） | 待办 |
+| PR2 | Core Model（`EntryStore`、snapshot 侧表、hardlink 分组） | ✅ 分支 `feat/pr2-core-model` |
 | PR3 | Reference Filesystem Source（单线程 oracle） | 阻塞于 PR0 |
 | PR4 | Parallel Filesystem Source | 阻塞于 PR3 |
 | PR5 | Plan + Executor | 待办 |
