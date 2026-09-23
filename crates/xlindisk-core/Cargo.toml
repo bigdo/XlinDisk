@@ -1,0 +1,12 @@
+[package]
+name = "xlindisk-core"
+description = "Read-only storage analysis kernel: model, plan, runtime and source contract."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bitflags = { workspace = true }
+
+[dev-dependencies]

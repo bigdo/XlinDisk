@@ -42,5 +42,16 @@ human-readable evidence, and safe-by-default mutations:
 
 ## Status
 
-Repository bootstrap only. The implementation and protocol contracts will be
-developed in follow-up changes.
+Repository bootstrap done; **PR0 (Contract Freeze)** and **PR1 (Architecture
+skeleton)** are in progress.
+
+- `docs/contracts/` — frozen semantics: object identity, observation
+  consistency, locator, run status/errors, determinism, duplicate memory model,
+  result schema, cross-platform fixtures. **PR3 must not start until these are
+  merged.**
+- `docs/adr/` — ADR-001…010.
+- `docs/ARCHITECTURE.md` — layout, dependency direction, PR order.
+- `crates/` — `xlindisk-core` (frozen types), `xlindisk-source-fs` (skeleton
+  until PR3), `xlindisk-cli`, `xlindisk-bench`.
+
+v0.0.1 is a read-only engine: no delete / move / trash in the core.

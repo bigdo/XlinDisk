@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/xlindisk-core",
+    "crates/xlindisk-source-fs",
+    "crates/xlindisk-cli",
+    "crates/xlindisk-bench",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bigdo/XlinDisk"
+
+[workspace.dependencies]
+xlindisk-core = { path = "crates/xlindisk-core" }
+bitflags = "2"
+
+# Dependency direction is one-way and is enforced by review, not by convention:
+#   xlindisk-core        -> (nothing)
+#   xlindisk-source-fs   -> xlindisk-core
+#   xlindisk-cli / bench -> xlindisk-core + concrete sources
+# Core must never depend on an application or on a concrete source, otherwise the
+# iOS / Android compile smoke test loses its meaning.
