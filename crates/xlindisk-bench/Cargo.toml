@@ -1,0 +1,10 @@
+[package]
+name = "xlindisk-bench"
+description = "Benchmark harness. Performance is a first-class feature of the core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+xlindisk-core = { workspace = true }
